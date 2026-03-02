@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Competency Grade Analyzer - 等級・コンピテンシー判定</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&family=Noto+Sans+JP:wght@400;500;700;900&display=swap');
+    body { font-family: 'Inter', 'Noto Sans JP', 'Helvetica Neue', Arial, sans-serif; }
+    
+    .fade-in { animation: fadeIn 0.3s ease-out forwards; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #020617; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    @media print {
+      @page { size: A4 landscape; margin: 10mm; }
+      html, body {
+        height: 100% !important;
+        overflow: hidden !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        background: white !important;
+        margin: 0; padding: 0;
+      }
+      .no-print { display: none !important; }
+      .page-break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
+    }
+
+    button:focus-visible, input:focus-visible {
+      outline: 2px solid #f59e0b;
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-200 antialiased print:bg-white print:text-slate-800">
+  <main id="app" class="min-h-screen flex flex-col items-center justify-center w-full"></main>
+
+  <script>
+    const escapeHtml = (str) => {
+      if (!str) return '';
+      return String(str).replace(/[&<>"'`=\/]/g, (s) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '/': '&#x2F;', '`': '&#x60;', '=': '&#x3D;'
+      }[s]));
+    };
+
+    // ★各次元に「行動変容・到達難易度（diff）」のパラメーターを追加
+    const DIMENSIONS = {
+      B: { name: 'Basic Stance', label: '基礎姿勢・規律', desc: '誠実性、ルール遵守、タフさ、チームワーク', diff: 1.0 },
+      E: { name: 'Execution', label: '業務遂行・目標達成', desc: '目標達成への執着、クォリティ、状況把握、改善', diff: 1.2 },
+      S: { name: 'Specialty', label: '専門性・利益創出', desc: 'スペシャリティ、プロフィット、カスタマーサービス', diff: 1.5 },
+      M: { name: 'Management', label: '計画・育成・組織', desc: '計画立案、進捗・計数管理、人材育成、組織運営', diff: 1.5 },
+      I: { name: 'Innovation', label: '企画・変革・戦略', desc: '創造的能力、企画提案、変革力、戦略策定', diff: 1.8 },
+      L: { name: 'Leadership', label: '統率・決断・影響力', desc: 'ビジョン策定、決断力、説得力、人的ネットワーク', diff: 2.0 }
+    };
+
+    const GRADE_REQUIREMENTS = [
+      { id: 'G1', type: 'G', name: 'G1 (メンバー)',  req: { B: 40, E: 10, S:  0, I:  0, M:  0, L:  0 } },
+      { id: 'G2', type: 'G', name: 'G2 (メンバー)',  req: { B: 60, E: 30, S: 10, I:  0, M:  0, L:  0 } },
+      { id: 'G3', type: 'G', name: 'G3 (中核メンバー)',req: { B: 80, E: 60, S: 20, I: 20, M: 10, L:  0 } },
+      { id: 'G4', type: 'G', name: 'G4 (リーダー層)',req: { B: 85, E: 75, S: 30, I: 30, M: 30, L: 10 } },
+      { id: 'G5', type: 'G', name: 'G5 (リーダー層)',req: { B: 90, E: 85, S: 40, I: 40, M: 50, L: 20 } },
+      { id: 'G6', type: 'G', name: 'G6 (管理職層)',  req: { B: 90, E: 85, S: 50, I: 50, M: 70, L: 40 } },
+      { id: 'G7', type: 'G', name: 'G7 (管理職層)',  req: { B: 90, E: 85, S: 50, I: 60, M: 80, L: 60 } },
+      { id: 'G8', type: 'G', name: 'G8 (上位管理職)',req: { B: 90, E: 85, S: 50, I: 70, M: 85, L: 80 } },
+      { id: 'G9', type: 'G', name: 'G9 (上位管理職)',req: { B: 90, E: 85, S: 50, I: 80, M: 90, L: 90 } },
+      { id: 'G10',type: 'G', name: 'G10 (経営層)',   req: { B: 90, E: 85, S: 50, I: 90, M: 95, L: 95 } },
+      { id: 'SP', type: 'S', name: 'SP (スペシャリスト)',req: { B: 90, E: 85, S: 75, I: 40, M: 30, L: 20 } },
+      { id: 'EX', type: 'S', name: 'EX (エキスパート)',  req: { B: 90, E: 85, S: 85, I: 60, M: 40, L: 40 } },
+      { id: 'F1', type: 'S', name: 'F1 (フェロー)',req: { B: 90, E: 85, S: 90, I: 70, M: 50, L: 60 } },
+      { id: 'F2', type: 'S', name: 'F2 (フェロー)',req: { B: 90, E: 85, S: 95, I: 80, M: 50, L: 75 } },
+      { id: 'F3', type: 'S', name: 'F3 (フェロー)',req: { B: 90, E: 85, S: 100,I: 90, M: 50, L: 85 } }
+    ];
+
+    const GRADE_ARCHETYPES = {
+      'G1': '基礎習得型', 'G2': '自律遂行型', 'G3': '自己完結型', 'G4': '影響拡張型', 'G5': '構造創出型',
+      'G6': '組織牽引型', 'G7': '変革主導型', 'G8': '戦略決断型', 'G9': '事業構想型', 'G10': '全社変革型',
+      'SP': '独自価値創出型', 'EX': '課題解決主導型', 'F1': '専門知体系化型', 'F2': '経営戦略直結型', 'F3': '社会価値波及型'
+    };
+
+    const PARADIGM_SHIFTS = {
+      'G2': { unlearn: "「指示待ち・受け身の姿勢」", acquire: "「自律的な目標遂行と自己完結力」" },
+      'G3': { unlearn: "「プロセスへの依存と手段の目的化」", acquire: "「目標達成への執着と状況把握に基づく軌道修正力」" },
+      'G4': { unlearn: "「個人プレイヤーとしての最適化」", acquire: "「他者への権限委譲とチームを通じた成果創出」" },
+      'G5': { unlearn: "「短期的なタスク管理・属人的な采配」", acquire: "「中期的な組織課題の解決と心理的安全性の構築」" },
+      'G6': { unlearn: "「自部署だけの局所的な視点」", acquire: "「全体最適の視点と、事業プロフィットへの明確なコミット」" },
+      'G7': { unlearn: "「既存ルールの無批判な踏襲」", acquire: "「組織の壁を越えたアライアンスと、変革の主導」" },
+      'G8': { unlearn: "「戦術レベルの漸進的な改善」", acquire: "「不確実な環境下でのリスクテイクと戦略的決断」" },
+      'G9': { unlearn: "「現状維持と安定の追求」", acquire: "「全く新しいビジネスモデルの構想と、未来のビジョン提示」" },
+      'G10': { unlearn: "「社内政治や調整へのリソース投下」", acquire: "「圧倒的な信念に基づくパラダイムシフトと全社牽引」" },
+      'SP': { unlearn: "「業務をただこなすだけの姿勢」", acquire: "「専門知識を通じた独自の付加価値と利益創出」" },
+      'EX': { unlearn: "「狭い範囲での自己完結的な専門性」", acquire: "「専門性を活かした部門横断的な課題解決のリード」" },
+      'F1': { unlearn: "「既存の専門知識の消費と現状維持」", acquire: "「未知の領域の開拓と、業界をリードする卓越した知見の体系化」" },
+      'F2': { unlearn: "「現場プレイヤーとしての技術探求」", acquire: "「専門知見による経営陣への提言と、事業戦略への直接的関与」" },
+      'F3': { unlearn: "「社内限定での影響力や評価の追求」", acquire: "「社外や業界・社会全体に波及する、極めて高度なイノベーションの実現」" }
+    };
+
+    const rawSJTs = [
+      ["コンプライアンス", "コンプライアンス違反の可能性があった際、直近のあなたの実際の行動に最も近いものは？", "自分で抱え込み、周囲に波風を立てずに処理した", {B:0, M:0}, "リスクを恐れず即座に上司や関連部署へ正式なエスカレーションを行った", {B:5, M:3}, "まずは自分の範囲で証拠を集めることにとどめ、様子を見た", {B:3, E:3}],
+      ["ルールの壁", "会社のルールと業績最大化が対立する場面での、直近のあなたの行動実績は？", "業績を優先し、事後報告またはグレーな範囲で実行した", {E:5, B:0}, "上層部にルールの改定や特例の承認を正式に提案し、クリアにしてから実行した", {B:5, E:3, I:3}, "ルール違反のリスクを回避するため、業績は諦めて何もしなかった", {B:3}],
+      ["利益と信念", "会社の利益と自分の信念が対立する場面で、あなたが実際に取った行動に近いものは？", "自分の感情は伏せ、会社の短期的な利益を優先する決定を下した", {S:4, B:2}, "利益を損ねてでも自らの信念や倫理観を貫き、上層部と議論した", {L:5, B:5}, "自分では判断を避け、上司や第三者に最終決定を委ねた", {B:0, L:0}],
+      ["品質と納期", "納品直前に仕様外の品質課題を発見した際の、実際の行動実績は？", "納期遵守を最優先とし、そのままの品質で納品した", {E:2, S:0}, "納期を再調整してでも、品質向上のための抜本的な修正を断行した", {S:5, E:3}, "納期通りに出しつつ、後日の追加対応やフォローでカバーした", {E:5, S:4}],
+      ["業務改善", "長年続く非効率なルーティン業務に対し、直近1年間であなたが実際に起こしたアクションは？", "作業スピードを上げるための個人的な工夫を凝らした", {E:4, B:3}, "新しいツールやシステムを導入・提案し、業務プロセス自体を自動化した", {I:5, E:5}, "特に何もせず、既存の手順通りに処理し続けた", {E:0}],
+      ["困難な目標", "チーム目標が未達になりそうな困難な状況下での、直近のあなたの実際の行動は？", "個人の残業や気合いで、自分の担当分だけはカバーしようとした", {E:4, M:1}, "進捗やプロセスを分析し、チーム全体の動き方を変える戦略的修正を実行した", {M:5, E:5, I:3}, "達成は不可能と判断し、目標の引き下げやリスケジュールを交渉した", {M:3}],
+      ["スキルの陳腐化", "自分の専門領域にAIなどの代替技術が登場した際、あなたが実際に行っている取り組みは？", "AIにはできない既存の人間的スキルの習熟に時間を割いている", {S:4}, "AIを自らの業務に組み込み、従来以上の新しい付加価値を創出するプロセスを構築した", {I:5, S:5}, "既存の専門性を捨て、全く別の領域のスキル習得へシフトした", {I:3}],
+      ["過度な要求", "重要顧客から自社の利益を圧迫する要求があった際の、あなたの直近の交渉実績は？", "関係維持を最優先し、自社の利益を削って要求を受け入れた", {S:3, M:0}, "自社の規定や採算を理由に、明確に要求を拒否した", {M:4, E:3}, "顧客の真の課題をヒアリングし、両社が納得する別の代替案を提示・妥結した", {S:5, E:5, L:3}],
+      ["専門外のタスク", "チームの重要タスクの担当者が不在になった際、あなたが実際に取った行動は？", "自分の専門外であるため、自分の業務に集中して他人に任せた", {S:3, M:0}, "専門外であっても自らキャッチアップし、実務を巻き取って遂行した", {M:5, E:4}, "代わりとなる外部リソースや他部署の専門家を迅速に手配・アサインした", {M:4, L:3}],
+      ["事業の衰退", "既存事業やプロジェクトが停滞・衰退している局面で、あなたが実際に行ったアクションは？", "コスト削減や既存プロセスの見直しによる延命策を実行した", {M:4, E:3}, "現状を打破する新規事業や全く新しい企画を起案し、実行をリードした", {I:5, L:5}, "自分の与えられた範囲のタスクのみをこなし、状況を見守った", {B:0}],
+      ["反発への対応", "自分の斬新な提案が現場から猛反発を受けた際、直近のあなたの行動実績は？", "反発を受け入れ、角が立たない無難な内容に企画を修正した", {B:3, E:3}, "プロトタイプやデータを用意し、現場を粘り強く説得・実証した", {I:5, E:5, L:4}, "上司や役員の権限を使い、トップダウンで強制的に実行させた", {L:3, M:1}],
+      ["競合の脅威", "競合が革新的なサービスを出してきた際、あなたが自部門に提案・実行した対抗策は？", "競合の機能を徹底的にベンチマークし、同等のものを後追い開発・導入した", {E:4, S:3}, "競合にはない自社独自の強みを再定義し、全く別のターゲットや価値を提供する戦略を実行した", {I:5, S:5, L:3}, "値引きや既存顧客への営業強化など、短期的なシェア維持策を実行した", {M:2}],
+      ["リソース不足", "チームのリソースが突然不足した危機的状況で、あなたが実際に取ったマネジメント行動は？", "メンバーの危機感を煽り、気合いと根性で乗り切るよう発破をかけた", {L:2, M:1}, "業務の棚卸しを行い、「やらないこと」を明確にして優先順位を厳格に再設定した", {M:5, E:5}, "すぐに採用や補充に動きつつ、一時的に自分がすべての実務を兼務した", {M:3, E:3}],
+      ["エース社員の扱い", "能力は高いが協調性のないエース社員に対する、あなたの直近の対応実績は？", "業績を優先し、周囲に彼をサポートするよう我慢させた", {S:3, M:2}, "1on1等で粘り強く対話し、チームへの影響や協調性の重要性を理解させ行動変容を促した", {L:5, M:5}, "チームの和を保つため、担当業務を切り離すか配置転換を提言した", {M:4, B:3}],
+      ["士気の低下", "チームの士気や一体感が低下していると感じた際、あなたが自発的に行った施策は？", "進捗管理ツールや日報を厳格化し、タスクのマイクロマネジメントを強化した", {E:4, M:2}, "1on1や雑談の場を意図的に設計し、心理的安全性の向上とケアに努めた", {M:5, B:4}, "各人のプロ意識に任せ、業務以外のコミュニケーション施策は特に取らなかった", {B:2}],
+      ["方針の転換", "大規模プロジェクトで方針の180度転換が必要になった際、あなたが実際に取った行動は？", "現場の混乱を避けるため、少しずつ時間をかけて方針をシフトさせた", {M:3, E:3}, "自らの言葉で全員に「なぜ転換が必要か」のビジョンを語り、パラダイムシフトを主導した", {L:5, I:5}, "決定事項として淡々とメールや会議で通達し、作業を割り振った", {B:3}],
+      ["利害の対立", "部門間の利害が対立し膠着した際、あなたが実際に取った解決行動は？", "各部門の要求をヒアリングし、全員が少しずつ我慢する折衷案で妥協した", {M:4, B:3}, "全体最適の観点から自らトップダウンで裁定を下し、その後の反発や責任を被った", {L:5, E:4}, "自分の権限では無理と判断し、上位の役員や部門長に解決を丸投げした", {B:2}],
+      ["不確実な決断", "成功の保証がない未知の領域での決断を迫られた際、あなたの直近の行動実績は？", "確実なデータや前例が揃うまで、決断や投資を先送りした", {E:3, M:3}, "失敗時の撤退ラインを自ら定義した上で、自分の責任としてゴーサインを出した", {L:5, S:5, I:4}, "多数決や会議での合議制に持ち込み、個人の責任を分散させて決めた", {M:2}]
+    ];
+
+    const rawScales = [
+      ["行動実績", "直近半年間で、会社の理念やビジョンを明確な根拠として、自分やチームの重要な意思決定を行った実績がある", "B", false],
+      ["行動実績", "直近半年間で、スケジュールの遅れや利益の損失が発生してでも、コンプライアンスやルールの遵守を優先した事案がある", "B", false],
+      ["行動実績", "直近半年間で、強いプレッシャーや想定外のトラブルに直面した際、感情を取り乱さずに周囲を落ち着かせる行動をとった", "B", false],
+      ["行動実績", "直近半年間で、個人の業績よりもチームの和や連携を優先し、他者のサポートに時間を割いた実績がある", "B", false],
+      ["行動実績", "直近半年間で、自らのミスや失敗を隠さずに即座に開示し、自ら責任を持って事後対応を完遂した経験がある", "B", false],
+      ["行動実績", "直近半年間で、立場の弱い関係者や外部パートナーに対しても、対等かつ誠実な対応を貫き、信頼関係を構築した実績がある", "B", false],
+      ["行動実績", "直近半年間で、現場の効率やスピードを優先するあまり、会社の公式なルールやプロセスを意図的に省略したことがある", "B", true],
+      ["行動実績", "直近半年間で、業務のストレスや忙しさから、周囲のメンバーに対して感情的な態度やイライラを見せてしまったことがある", "B", true],
+      ["行動実績", "直近半年間で、問題が発生した際、自分ではなく他部署や環境のせいにし、責任の所在を回避しようとしたことがある", "B", true],
+      ["行動実績", "直近半年間で、会社の理念やパーパスについて語る機会は全くなく、実務の数字やタスク消化のみに集中していた", "B", true],
+      ["行動実績", "直近半年間で、最終的な結果を出すために、事前に合意した納期や品質基準を無断で変更したことがある", "B", true],
+      ["行動実績", "直近半年間で、チームの目標達成よりも、自分自身の評価や個人のKPI達成を明らかに優先して行動したことがある", "B", true],
+      ["行動実績", "直近1年間で、極めて困難な目標に対し、複数回の計画修正と追加アクションを実行し、最終的に達成した実績がある", "E", false],
+      ["行動実績", "直近半年間で、納品前やリリース前に自ら品質の妥協点を見つけ、工数を追加してでも修正を完遂した経験がある", "E", false],
+      ["行動実績", "直近半年間で、自らの部署や担当業務における非効率なプロセスを発見し、実際に改善策を導入して工数を削減した実績がある", "E", false],
+      ["行動実績", "直近半年間で、プロジェクトが計画から逸脱した際、即座に現状を定量的に把握し、数日以内に軌道修正の打ち手を実行した", "E", false],
+      ["行動実績", "直近半年間で、自分の役割定義（Job Description）を超えた領域のタスクを自ら巻き取り、プロジェクトを成功に導いた実績がある", "E", false],
+      ["行動実績", "直近半年間で、複数の重要タスクが重なった際、独自のタスク管理手法で優先順位をつけ、一つも期限を落とさずに完遂した", "E", false],
+      ["行動実績", "直近半年間で、目標未達が確実になった段階で、「自分はベストを尽くした」と理由づけし、それ以上の粘りを諦めたことがある", "E", true],
+      ["行動実績", "直近半年間で、品質を高めることよりも、とりあえず形にして素早く終わらせることを優先し、後から指摘を受けたことがある", "E", true],
+      ["行動実績", "直近半年間で、「慣れたやり方を変えるのは面倒だ」と感じ、新しいツールの導入や手順の変更提案を意図的に見送ったことがある", "E", true],
+      ["行動実績", "直近半年間で、予期せぬトラブルが発生した際、自ら動けずに上司や他者からの具体的な指示を待ってしまったことがある", "E", true],
+      ["行動実績", "直近半年間で、他メンバーの業務が明らかに逼迫しているのを知りながら、自分のタスク完了を理由にサポートしなかったことがある", "E", true],
+      ["行動実績", "直近半年間で、自身のスケジュール管理の甘さから納期直前に焦り、周囲にフォローを頼んだり期限を延長したことがある", "E", true],
+      ["行動実績", "直近半年間で、業務時間外も含めて専門分野の最新知見を学習し、それを実務に導入して明確な成果を上げた実績がある", "S", false],
+      ["行動実績", "直近半年間で、顧客の期待値を意図的に超える付加価値を提供し、直接感謝や高い評価を受けた実績がある", "S", false],
+      ["行動実績", "直近半年間で、自らの専門知識を活用して、自部署のコスト削減または売上向上に直接結びつく具体的な施策を実行した", "S", false],
+      ["行動実績", "直近半年間で、自分の持つ専門的なノウハウをドキュメント化や勉強会という形で組織に還元し、チームの底上げに貢献した", "S", false],
+      ["行動実績", "直近半年間で、顧客自身も気づいていなかった潜在的な課題をデータや観察から見抜き、ソリューションを提案・実行した実績がある", "S", false],
+      ["行動実績", "直近半年間で、他部署や社外から、あなたの専門性を名指しされて技術的な相談やプロジェクト参画の依頼を受けた実績がある", "S", false],
+      ["行動実績", "直近半年間で、現在のスキルセットで業務が回っているため、新しい専門知識や技術をインプットする時間をほとんど取っていない", "S", true],
+      ["行動実績", "直近半年間で、顧客の要望の背景を深掘りすることなく、表面上言われたタスクだけを淡々とこなした事案がある", "S", true],
+      ["行動実績", "直近半年間で、自身の業務が会社の利益にどう直結しているかを意識せず、単なる作業として取り組んでいた", "S", true],
+      ["行動実績", "直近半年間で、自分の専門性やノウハウを他人に共有することを意図的に避け、自分だけの属人的なスキルにとどめたことがある", "S", true],
+      ["行動実績", "直近半年間で、専門的な根拠に基づかない、感覚や周囲の人間関係だけを頼りに業務上の判断を下したことがある", "S", true],
+      ["行動実績", "直近半年間で、顧客や利用者の利便性よりも、自分自身の作業の進めやすさや効率を優先して仕様を決定したことがある", "S", true],
+      ["行動実績", "直近1年間で、前例や既存の慣習に全く捉われない新しいアプローチを自ら考案し、実務で検証した実績がある", "I", false],
+      ["行動実績", "直近1年間で、ゼロから新しい企画やビジネスモデルの構想書を作成し、上層部に正式に提案した実績がある", "I", false],
+      ["行動実績", "直近半年間で、組織の現状の体制やルールに異議を唱え、より良い状態への変革を推進するプロジェクトを立ち上げた", "I", false],
+      ["行動実績", "直近半年間で、断片的な複数の情報やデータを構造化し、自部門やチームの「次の一手」となる戦略ストーリーを明文化した", "I", false],
+      ["行動実績", "直近半年間で、失敗するリスクが一定以上あることを承知の上で、自ら責任を被る覚悟で新しい施策の実行を決断した実績がある", "I", false],
+      ["行動実績", "直近半年間で、自業界以外のトレンドや最新テクノロジーの事例を意図的に収集し、自社の業務に転用・応用した実績がある", "I", false],
+      ["行動実績", "直近半年間で、前例のない新しい試みの提案を受けた際、リスクを恐れて過去の成功パターンを踏襲するよう誘導したことがある", "I", true],
+      ["行動実績", "直近半年間で、自らゼロベースで企画を考えることはなく、すでに決まった方針や上位者からの指示を具現化することに終始した", "I", true],
+      ["行動実績", "直近半年間で、組織体制やルールを変えようとする動きに対し、「波風が立つ」「面倒だ」と感じて消極的な態度をとったことがある", "I", true],
+      ["行動実績", "直近半年間で、数ヶ月先の長期的な戦略を考える時間を全く取らず、目の前の日々のタスク消化のみに追われていた", "I", true],
+      ["行動実績", "直近半年間で、斬新なアイデアを思いついたものの、「どうせ通らない」「失敗したら評価が下がる」と考えて提案自体を見送った", "I", true],
+      ["行動実績", "直近半年間で、新しいツールや手法の導入機会があったにもかかわらず、学習コストを理由に既存のやり方に固執したことがある", "I", true],
+      ["行動実績", "直近1年間で、チーム全体の目標から逆算した詳細なWBSやマイルストーンを自ら策定し、進捗を管理した実績がある", "M", false],
+      ["行動実績", "直近半年間で、メンバーそれぞれの適性や強み・弱みを客観的に分析し、それに基づいてタスクのアサインや役割変更を行った実績がある", "M", false],
+      ["行動実績", "直近半年間で、後輩や部下の成長のために、本人が嫌がる可能性のある厳しいフィードバックを対面で直接伝えた実績がある", "M", false],
+      ["行動実績", "直近半年間で、自部署の財務データ（予算、売上、コスト等）を定期的に分析し、それに基づくリソース配分や投資判断を行った", "M", false],
+      ["行動実績", "直近半年間で、プロジェクトの進捗の遅れを早期に検知し、他タスクの停止や人員の再配置など、抜本的なリカバリー策を実行した", "M", false],
+      ["行動実績", "直近半年間で、1on1ミーティングやチームビルディングの場を意図的に設計・実施し、チームの心理的安全性を向上させた実績がある", "M", false],
+      ["行動実績", "直近半年間で、緻密な計画を立てずに「走りながら考える」スタイルでプロジェクトを開始し、結果的にスケジュールを遅延させた", "M", true],
+      ["行動実績", "直近半年間で、他者の育成や指導に時間を割くことを「非効率」と考え、自分がプレイヤーとして実務を巻き取ってしまった", "M", true],
+      ["行動実績", "直近半年間で、相手との関係悪化を恐れるあまり、部下や後輩の明らかな問題行動に対して明確な注意や指導を行わなかった", "M", true],
+      ["行動実績", "直近半年間で、予算やコスト、工数などの「数字」に基づく厳密な管理を怠り、どんぶり勘定で業務を進行させてしまった", "M", true],
+      ["行動実績", "直近半年間で、チームメンバーが現在何のタスクをどれくらいの負荷で抱えているかを、正確に把握できていない期間があった", "M", true],
+      ["行動実績", "直近半年間で、組織の雰囲気やメンバーのモチベーション低下に気づきながら、「個人の自己責任だ」として放置したことがある", "M", true],
+      ["行動実績", "直近1年間で、組織やプロジェクトの向かうべき明確なビジョンを自らの言葉で言語化し、メンバーに語って牽引した実績がある", "L", false],
+      ["行動実績", "直近半年間で、必要な情報がすべて揃っていない不確実な状況下において、自らリスクを背負って最終的な意思決定を下した実績がある", "L", false],
+      ["行動実績", "直近半年間で、自分の提案に対して強く反対する相手に対し、論理的なデータと情熱を用いて対話し、最終的に合意形成に至った実績がある", "L", false],
+      ["行動実績", "直近半年間で、周囲からの同調圧力や忖度を求められる場面において、自分の信念に基づき「No」と明確に主張し組織を正した実績がある", "L", false],
+      ["行動実績", "直近1年間で、自部署の枠を超えた社内外のキーパーソンとの強固なネットワークを意図的に構築し、それを活かして課題を解決した", "L", false],
+      ["行動実績", "直近半年間で、自らの行動や言葉によって、沈んでいたチームのモチベーションを明らかに引き上げ、行動変容を起こさせた実績がある", "L", false],
+      ["行動実績", "直近半年間で、ビジョンや目的を語るステップを省略し、メンバーに対して「作業の指示」のみを与えて業務を動かしたことがある", "L", true],
+      ["行動実績", "直近半年間で、責任を伴う重要な決断を自ら下すことを避け、上司の指示を仰ぐか、会議での多数決に持ち込んで責任を分散させた", "L", true],
+      ["行動実績", "直近半年間で、会議で声の大きい人から強い反対意見が出た際、自分の主張の正しさを信じながらも反論を諦め、相手に迎合した", "L", true],
+      ["行動実績", "直近半年間で、自分の倫理観や信念よりも、その場の空気や「事勿れ主義」を優先して、見て見ぬふりをした事案がある", "L", true],
+      ["行動実績", "直近半年間で、利害関係の異なる多くの人を巻き込む必要がある複雑なプロジェクトの主導を、面倒だと感じて意図的に避けた", "L", true],
+      ["行動実績", "直近半年間で、人前に立って方針を示すリーダーシップの発揮を求められたが、裏方やサポート役に回ることを自ら選択した", "L", true]
+    ];
+
+    const QUESTIONS = [];
+    rawSJTs.forEach(r => { QUESTIONS.push({ theme: r[0], text: r[1], options: [ { text: r[2], scores: r[3] }, { text: r[4], scores: r[5] }, { text: r[6], scores: r[7] } ] }); });
+    rawScales.forEach(r => {
+      const opts = [ { text: "明確な実績がある", val: 5 }, { text: "何度か実績がある", val: 4 }, { text: "どちらとも言えない", val: 3 }, { text: "あまり実績はない", val: 2 }, { text: "全く実績はない", val: 1 } ];
+      QUESTIONS.push({ theme: r[0], text: r[1], options: opts.map(o => {
+          let score = r[3] ? (6 - o.val) : o.val;
+          let finalScore = score === 5 ? 5 : (score === 4 ? 3 : 0); 
+          let sObj = {};
+          if(finalScore > 0) sObj[r[2]] = finalScore;
+          return { text: o.text, scores: sObj };
+        })
+      });
+    });
+
+    for (let i = QUESTIONS.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [QUESTIONS[i], QUESTIONS[j]] = [QUESTIONS[j], QUESTIONS[i]];
+    }
+
+    class CompetencyAnalyzer {
+      constructor(containerId) {
+        this.container = document.getElementById(containerId);
+        this.STORAGE_KEY = 'comp_grade_save_v18_masterpiece'; 
+        this.state = this.getInitialState();
+      }
+
+      getInitialState() {
+        return {
+          step: 'START', currentQuestionIndex: 0, userName: "", scores: { B: 0, E: 0, S: 0, I: 0, M: 0, L: 0 },
+          answerHistory: [], pctScores: {}, ranking: [], gradeMatches: [], bestGrade: null, nextGrade: null, careerType: null
+        };
+      }
+
+      init() { this.render(); }
+      hasSavedData() { try { return localStorage.getItem(this.STORAGE_KEY) !== null; } catch(e) { return false; } }
+      saveProgress() { try { localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.state)); } catch (e) { } }
+      loadProgress() { try { const saved = localStorage.getItem(this.STORAGE_KEY); if (saved) { this.state = JSON.parse(saved); this.render(); } } catch (e) { } }
+      clearProgress() { try { localStorage.removeItem(this.STORAGE_KEY); } catch(e) {} }
+
+      handleStart() {
+        this.state = this.getInitialState(); 
+        const inputElement = document.getElementById('user-name');
+        if (inputElement) {
+          const rawVal = inputElement.value.trim();
+          if (rawVal.length > 20) { alert("エラー：お名前は20文字以内で入力してください。"); return; }
+          this.state.userName = rawVal ? rawVal : "Guest"; 
+        }
+        this.state.step = 'QUESTION';
+        this.saveProgress();
+        this.render();
+      }
+
+      handleAnswer(optionScores) {
+        if (!optionScores) return;
+        this.state.answerHistory.push(optionScores);
+        for (let key in optionScores) { if (this.state.scores[key] !== undefined) { this.state.scores[key] += optionScores[key]; } }
+        if (this.state.currentQuestionIndex + 1 < QUESTIONS.length) {
+          this.state.currentQuestionIndex++; this.saveProgress(); this.render();
+        } else {
+          this.calculateResult(); this.clearProgress(); this.state.step = 'RESULT'; this.render();
+        }
+      }
+
+      goBack() {
+        if (this.state.currentQuestionIndex > 0) {
+          const lastScores = this.state.answerHistory.pop();
+          if (lastScores) { for (let key in lastScores) { if (this.state.scores[key] !== undefined) { this.state.scores[key] -= lastScores[key]; } } }
+          this.state.currentQuestionIndex--; this.saveProgress(); this.render();
+        }
+      }
+
+      calculateResult() {
+        let maxScores = { B: 0, E: 0, S: 0, I: 0, M: 0, L: 0 };
+        QUESTIONS.forEach(q => {
+          let qMax = { B: 0, E: 0, S: 0, I: 0, M: 0, L: 0 };
+          q.options.forEach(opt => { for (let key in opt.scores) { if (opt.scores[key] > qMax[key]) qMax[key] = opt.scores[key]; } });
+          for (let key in qMax) maxScores[key] += qMax[key];
+        });
+
+        let pctScores = {};
+        for (let key in this.state.scores) {
+          pctScores[key] = maxScores[key] > 0 ? Math.min(100, Math.round((this.state.scores[key] / maxScores[key]) * 100)) : 0;
+        }
+        this.state.pctScores = pctScores;
+
+        let dimList = Object.keys(pctScores).map(k => ({ key: k, score: pctScores[k] }));
+        dimList.sort((a, b) => b.score - a.score);
+        this.state.ranking = dimList;
+
+        let rawMatches = [];
+        GRADE_REQUIREMENTS.forEach(grade => {
+          let isClear = true;
+          let missingDetails = [];
+          let reqTotal = 0, userTotal = 0;
+          for (let key in grade.req) {
+            let req = grade.req[key];
+            if (req > 0) {
+              reqTotal += req;
+              userTotal += Math.min(pctScores[key], req);
+              if (pctScores[key] < req) {
+                isClear = false;
+                // ★差分と難易度（diff）からコストを計算して保持
+                let gap = req - pctScores[key];
+                let cost = gap * DIMENSIONS[key].diff;
+                missingDetails.push({ label: DIMENSIONS[key].label, gap: gap, diff: DIMENSIONS[key].diff, cost: cost });
+              }
+            }
+          }
+          let matchPct = reqTotal > 0 ? Math.round((userTotal / reqTotal) * 100) : 100;
+          rawMatches.push({ ...grade, matchPct, isClear, missingDetails });
+        });
+
+        let matches = [];
+        let gMatches = rawMatches.filter(m => m.type === 'G');
+        let currentMaxG = 100;
+        gMatches.forEach(m => { m.matchPct = Math.min(m.matchPct, currentMaxG); currentMaxG = m.matchPct; matches.push(m); });
+
+        let sMatches = rawMatches.filter(m => m.type === 'S');
+        let currentMaxS = 100;
+        sMatches.forEach(m => { m.matchPct = Math.min(m.matchPct, currentMaxS); currentMaxS = m.matchPct; matches.push(m); });
+
+        this.state.gradeMatches = rawMatches.map(rm => matches.find(m => m.id === rm.id));
+
+        const gList = this.state.gradeMatches.filter(m => m.type === 'G').reverse();
+        const sList = this.state.gradeMatches.filter(m => m.type === 'S').reverse();
+
+        let clearedG = gList.find(g => g.isClear);
+        let clearedS = sList.find(s => s.isClear);
+        let bestG = clearedG || this.state.gradeMatches.find(m => m.id === 'G1');
+
+        // ★2Dベクトル解析による「重心ベクトル」志向性判定
+        // V_M (Management Vector) = sqrt(M^2 + L^2)
+        // V_S (Specialist Vector) = sqrt(S^2 + I^2)
+        let magM = Math.sqrt(Math.pow(pctScores.M, 2) + Math.pow(pctScores.L, 2));
+        let magS = Math.sqrt(Math.pow(pctScores.S, 2) + Math.pow(pctScores.I, 2));
+        // マージン5%を持たせ、専門性が明らかに突き抜けている場合のみSpecialistとする
+        let isSpecialist = magS > (magM * 1.05); 
+        let careerType = isSpecialist ? '専門職ライン (SP/EX/F系列) 重心' : 'マネジメントライン (G系列) 重心';
+
+        let bestGrade = bestG;
+        let nextGrade = null;
+
+        if (isSpecialist) {
+            if (clearedS) {
+                bestGrade = clearedS;
+                let originalIndex = this.state.gradeMatches.findIndex(m => m.id === bestGrade.id);
+                nextGrade = this.state.gradeMatches.slice(originalIndex + 1).find(m => m.type === 'S');
+            } else {
+                bestGrade = bestG;
+                nextGrade = this.state.gradeMatches.find(m => m.id === 'SP');
+            }
+        } else {
+            bestGrade = bestG;
+            let originalIndex = this.state.gradeMatches.findIndex(m => m.id === bestGrade.id);
+            nextGrade = this.state.gradeMatches.slice(originalIndex + 1).find(m => m.type === 'G');
+        }
+
+        this.state.bestGrade = bestGrade;
+        this.state.nextGrade = nextGrade;
+        this.state.careerType = careerType;
+      }
+
+      render() {
+        if (!this.container) return;
+        try {
+          this.container.innerHTML = '';
+          if (this.state.step === 'RESULT') {
+            document.body.className = "bg-slate-50 text-slate-800 antialiased print:bg-white print:text-slate-800";
+          } else {
+            document.body.className = "bg-slate-950 text-slate-200 antialiased print:bg-white print:text-slate-800";
+          }
+
+          if (this.state.step === 'START') {
+            this.container.innerHTML = this.getStartHtml(); this.attachStartListeners();
+          } else if (this.state.step === 'QUESTION') {
+            this.container.innerHTML = this.getQuestionHtml(); this.attachQuestionListeners();
+          } else if (this.state.step === 'RESULT') {
+            this.container.innerHTML = this.getResultHtml(); this.attachResultListeners();
+          }
+        } catch(err) {
+          this.container.innerHTML = `<div class="p-8 border-2 border-red-500 bg-red-900 text-white rounded-lg">システムエラーが発生しました: ${escapeHtml(err.message)}</div>`;
+        }
+      }
+
+      attachStartListeners() {
+        const startBtn = document.getElementById('start-btn'); if (startBtn) startBtn.onclick = (e) => { e.preventDefault(); this.handleStart(); };
+        const loadBtn = document.getElementById('load-btn'); if (loadBtn) loadBtn.onclick = (e) => { e.preventDefault(); this.loadProgress(); };
+        const inputElement = document.getElementById('user-name');
+        if (inputElement) inputElement.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); this.handleStart(); } };
+      }
+
+      attachQuestionListeners() {
+        const btns = this.container.querySelectorAll('.option-btn');
+        const currentQ = QUESTIONS[this.state.currentQuestionIndex];
+        btns.forEach((btn, idx) => { btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); if (currentQ && currentQ.options[idx]) this.handleAnswer(currentQ.options[idx].scores); }; });
+        const backBtn = document.getElementById('back-btn'); if (backBtn) backBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); this.goBack(); };
+        const qTitle = document.getElementById(`question-title-${this.state.currentQuestionIndex}`); if (qTitle) { qTitle.tabIndex = -1; qTitle.focus(); }
+      }
+
+      attachResultListeners() {
+        const nameDisplays = document.querySelectorAll('.display-user-name');
+        nameDisplays.forEach(el => { el.textContent = this.state.userName; });
+        const restartBtn = document.getElementById('restart-btn');
+        if (restartBtn) restartBtn.onclick = (e) => { e.preventDefault(); this.state = this.getInitialState(); this.render(); };
+        setTimeout(() => { this.renderCharts(); }, 10);
+      }
+
+      getStartHtml() {
+        const hasSave = this.hasSavedData();
+        return `
+          <section class="fade-in flex items-center justify-center p-4 w-full h-full">
+            <div class="bg-slate-900 rounded-lg shadow-2xl p-8 md:p-12 max-w-2xl w-full border border-slate-800">
+              <h1 class="text-2xl md:text-3xl font-bold text-white mb-4 text-center tracking-wide">
+                Competency Grade Analyzer
+              </h1>
+              <p class="text-center text-amber-400 text-sm font-bold tracking-widest mb-8">自己経営OS・戦略マップ生成モデル</p>
+              <div class="border-b border-amber-600 w-full mb-8"></div>
+              
+              <div class="mb-6">
+                <label class="block text-amber-400 text-xs font-bold mb-2 uppercase tracking-wide" for="user-name">NAME / 受検者氏名</label>
+                <input type="text" id="user-name" autocomplete="off" placeholder="氏名を入力してください（未入力はGuest）" class="appearance-none bg-slate-800 border border-slate-700 rounded w-full py-3 px-4 text-slate-200 leading-tight focus:outline-none focus:ring-2 focus:ring-amber-500">
+              </div>
+
+              <div class="bg-slate-800/50 border-l-4 border-amber-500 rounded p-6 mb-8 text-sm text-slate-300">
+                <h2 class="text-amber-400 font-bold mb-4 text-base flex items-center">
+                  <span class="w-2 h-2 bg-amber-400 mr-2"></span> Assessment Methodology
+                </h2>
+                <p class="mb-3 text-slate-300">本システムは「平均点」での甘い判定を行いません。全90問の「行動実績ファクト」に基づき、該当グレードの<strong>【必須クリア条件（足切り）】</strong>を厳格に判定します。<br>さらに2Dベクトル解析と到達難易度アルゴリズムを用い、成長のための<strong>「最短経路（戦略マップ）」</strong>を算出します。</p>
+                <ul class="space-y-1 mb-5 pl-2 text-xs">
+                  <li>・<strong>Basic Stance:</strong> 基礎姿勢・誠実性・規律</li>
+                  <li>・<strong>Execution:</strong> 業務遂行力・目標達成・改善</li>
+                  <li>・<strong>Specialty:</strong> 専門性・利益創出・顧客志向</li>
+                  <li>・<strong>Innovation:</strong> 企画提案・変革力・戦略策定</li>
+                  <li>・<strong>Management:</strong> 計画進捗管理・人材育成・組織運営</li>
+                  <li>・<strong>Leadership:</strong> ビジョン策定・決断・影響力・信念</li>
+                </ul>
+              </div>
+
+              <div class="text-center mt-8 flex flex-col items-center space-y-4">
+                <button type="button" id="start-btn" class="w-full sm:w-auto bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-10 rounded transition-colors text-sm tracking-wide focus:outline-none">
+                  アセスメントを開始する (全90問)
+                </button>
+                ${hasSave ? `<button type="button" id="load-btn" class="w-full sm:w-auto text-slate-400 hover:text-white underline text-sm transition-colors focus:outline-none">前回の続きから再開する</button>` : ''}
+              </div>
+            </div>
+          </section>
+        `;
+      }
+
+      getQuestionHtml() {
+        const qIndex = this.state.currentQuestionIndex;
+        const currentQ = QUESTIONS[qIndex];
+        const progress = ((qIndex) / QUESTIONS.length) * 100;
+
+        const optionsHtml = currentQ.options.map((opt, idx) => `
+          <button type="button" class="option-btn w-full text-left p-5 border border-slate-700 bg-slate-900 rounded hover:border-amber-500 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all font-medium text-slate-300 text-sm md:text-base cursor-pointer" aria-describedby="question-title-${qIndex}">
+            ${escapeHtml(opt.text)}
+          </button>
+        `).join('');
+
+        const backBtnHtml = qIndex > 0 
+          ? `<button type="button" id="back-btn" class="text-slate-500 hover:text-amber-400 text-sm flex items-center transition-colors focus:outline-none">
+              <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg> 前に戻る
+             </button>` : `<div></div>`;
+
+        return `
+          <section class="fade-in max-w-2xl w-full mx-auto p-4 pt-8 md:pt-12" aria-labelledby="question-title-${qIndex}">
+            <div class="w-full bg-slate-800 h-2 mb-8 rounded-full overflow-hidden">
+              <div class="bg-amber-500 h-full transition-all duration-300" style="width: ${progress}%"></div>
+            </div>
+            <div class="bg-slate-900 rounded-lg shadow-xl p-6 md:p-10 border border-slate-800">
+              <div class="flex items-center justify-between mb-6">
+                <span class="bg-slate-800 text-amber-400 text-xs px-3 py-1 rounded border border-slate-700">Q${qIndex + 1}. ${escapeHtml(currentQ.theme)}</span>
+                <span class="text-slate-500 text-xs font-mono font-bold">${qIndex + 1} / ${QUESTIONS.length}</span>
+              </div>
+              <h2 id="question-title-${qIndex}" class="text-lg md:text-xl font-bold text-white mb-8 leading-relaxed focus:outline-none">${escapeHtml(currentQ.text)}</h2>
+              <div class="space-y-3 flex flex-col">${optionsHtml}</div>
+              <div class="mt-8 pt-4 border-t border-slate-800 flex justify-between items-center">${backBtnHtml}</div>
+            </div>
+          </section>
+        `;
+      }
+
+      getResultHtml() {
+        const { pctScores, bestGrade, nextGrade, careerType, ranking } = this.state;
+        const today = new Date();
+        const dateStr = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`;
+
+        const top1 = DIMENSIONS[ranking[0].key];
+
+        // ★ギャップ・インジケーター（最短経路の算出と可視化）
+        let missingReqHtml = '<span class="text-slate-500 text-[11px] font-bold">全ての必須要件をクリアしています。</span>';
+        if (nextGrade && nextGrade.missingDetails && nextGrade.missingDetails.length > 0) {
+            // コスト（Gap * Difficulty）の小さい順にソートし、「最も労力対効果が高いもの」を最短経路とする
+            nextGrade.missingDetails.sort((a, b) => a.cost - b.cost);
+
+            missingReqHtml = '<div class="grid grid-cols-2 gap-2 mt-1">';
+            nextGrade.missingDetails.forEach((item, idx) => {
+                // 最もコストが低いものにバッジをつける
+                let badge = idx === 0 ? `<span class="bg-rose-500 text-white text-[8px] print:text-[7px] px-1 py-0.5 rounded ml-1 leading-none shadow-sm font-normal">最短経路</span>` : '';
+                let borderClass = idx === 0 ? 'border-rose-400 bg-rose-50' : 'border-slate-200 bg-white';
+                
+                missingReqHtml += `
+                    <div class="flex justify-between items-center ${borderClass} px-2 py-1 rounded shadow-sm">
+                        <span class="text-[10px] print:text-[8.5px] font-bold text-slate-700 flex items-center whitespace-nowrap overflow-hidden text-ellipsis mr-1">${escapeHtml(item.label.split('・')[0])}${badge}</span>
+                        <span class="text-[11px] print:text-[10px] font-black text-rose-600">+${item.gap}%</span>
+                    </div>
+                `;
+            });
+            missingReqHtml += '</div>';
+        }
+
+        const targetId = nextGrade ? nextGrade.id : bestGrade.id;
+        const paradigm = PARADIGM_SHIFTS[targetId] || { unlearn: "既存の思考の枠組み", acquire: "新たな価値基準の創出" };
+        
+        const bestArchetype = GRADE_ARCHETYPES[bestGrade.id] || '能力発展型';
+        const nextArchetype = nextGrade ? (GRADE_ARCHETYPES[nextGrade.id] || '上位発展型') : '最高到達点';
+
+        return `
+          <section class="fade-in max-w-[1000px] mx-auto p-4 md:py-8 w-full print:max-w-none print:w-full print:p-0 print:m-0">
+            <div class="bg-white p-8 md:p-10 print:p-6 border border-slate-200 print:border-none rounded shadow-sm print:shadow-none print:h-full flex flex-col">
+              
+              <div class="flex flex-col md:flex-row print:flex-row border-b border-slate-200 pb-6 mb-4 print:pb-3 print:mb-3 gap-8 print:gap-6">
+                
+                <div class="flex flex-col md:w-5/12 print:w-5/12 justify-center relative">
+                  <div class="absolute top-0 left-0 text-left w-full flex justify-between items-start">
+                    <div>
+                      <p class="text-amber-600 text-[10px] font-mono tracking-widest">${dateStr}</p>
+                      <p class="text-slate-900 text-sm font-bold mt-1 display-user-name"></p>
+                    </div>
+                    <div class="text-right">
+                      <p class="text-[8px] text-slate-400 font-mono">VECTOR ANALYSIS</p>
+                      <p class="text-[10px] font-bold text-slate-600">${escapeHtml(careerType)}</p>
+                    </div>
+                  </div>
+                  
+                  <div class="mt-12 print:mt-10">
+                    <p class="text-[10px] text-slate-500 font-bold tracking-[0.2em] mb-1">BEHAVIORAL ARCHETYPE</p>
+                    <h2 class="text-3xl print:text-2xl font-black text-slate-900 tracking-tight">${escapeHtml(bestGrade.id)} <span class="text-xl print:text-lg text-amber-600 ml-1">「${escapeHtml(bestArchetype)}」</span></h2>
+                    <p class="text-sm print:text-xs text-slate-500 font-bold mt-1">${escapeHtml(bestGrade.name.replace(bestGrade.id + ' ', ''))} / 実績ファクト到達判定</p>
+                  </div>
+
+                  <div class="mt-4 bg-slate-50 border border-slate-200 p-4 print:p-3 rounded text-[13px] print:text-[10.5px] text-slate-700 space-y-3.5 print:space-y-3 page-break-inside-avoid leading-relaxed">
+                    
+                    <div>
+                        <div class="font-bold text-amber-700 mb-1">■ 1. 判定ロジックと重心ベクトル</div>
+                        <p>本システムは「平均点」ではなく、<strong>「該当グレードが要求する全領域の必須条件（最低基準）をすべて突破しているか」</strong>という厳格な階層ロジックで判定しています。また、6次元の重心ベクトル解析（|V_S| vs |V_M|）の結果、あなたのポテンシャルは<strong>${escapeHtml(careerType.split(' ')[0])}</strong>の空間に強く傾いています。</p>
+                    </div>
+
+                    <div class="border-t border-slate-200 pt-3 print:pt-2">
+                        <div class="font-bold text-slate-800 mb-1">■ 2. あなたの最大の武器（コア特性）</div>
+                        <p>あなたの最大の武器は<strong>「${escapeHtml(top1.label)}」</strong>です。これが現在の成果の源泉であり、他者に対する影響力の基盤となっています。人は弱点の克服ではなく、強みの最大化によってのみ卓越した成果を出せます。この武器をさらに研ぎ澄ましてください。</p>
+                    </div>
+
+                    ${nextGrade ? `
+                    <div class="border-t border-slate-200 pt-3 print:pt-2">
+                        <div class="font-bold text-slate-800 mb-1">■ 3. ${escapeHtml(nextGrade.id)}（${escapeHtml(nextArchetype)}）への戦略マップ</div>
+                        <p class="mb-1">次期要件を満たすため、各項目の「到達難易度」と「スコア差分」から割り出した<strong>【最短距離での克服アクション】</strong>は以下の通りです。</p>
+                        ${missingReqHtml}
+                        <p class="mt-2 mb-1">これらのギャップを埋めるためには、単なる作業時間の投下ではなく、以下の明確な<strong>「思考転換（パラダイムシフト）」</strong>が必須となります。</p>
+                        <div class="flex flex-col gap-1 text-[12px] print:text-[9.5px] font-medium bg-white p-2 border border-slate-100 rounded mt-1 shadow-sm">
+                            <p><span class="inline-block bg-slate-200 text-slate-600 px-2 py-0.5 rounded text-[9px] mr-1 font-bold">手放す</span> ${escapeHtml(paradigm.unlearn)}</p>
+                            <p><span class="inline-block bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[9px] mr-1 font-bold">獲得する</span> ${escapeHtml(paradigm.acquire)}</p>
+                        </div>
+                    </div>` : ''}
+
+                  </div>
+                </div>
+
+                <div class="flex flex-col md:w-7/12 print:w-7/12 justify-center gap-5 print:gap-4">
+                  <div class="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 print:p-3 flex flex-col justify-center items-center shadow-sm">
+                    <h3 class="text-center font-bold text-slate-800 text-sm print:text-[11px] tracking-wide mb-2 print:mb-1 w-full">コンピテンシー 6次元バランス</h3>
+                    <div class="relative h-[210px] print:h-[190px] w-full">
+                      <canvas id="radarChart"></canvas>
+                    </div>
+                  </div>
+                  
+                  <div class="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 print:p-3 flex flex-col justify-center items-center shadow-sm">
+                    <h3 class="text-center font-bold text-slate-800 text-sm print:text-[11px] tracking-wide mb-2 print:mb-1 w-full">各グレードへの必須要件到達率 (%)</h3>
+                    <div class="relative h-[170px] print:h-[140px] w-full">
+                      <canvas id="barChart"></canvas>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              <div class="mt-2 text-center flex justify-center gap-4 print:hidden">
+                <button type="button" onclick="window.print()" class="bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 px-6 rounded shadow-md text-sm focus:outline-none">PDF保存・印刷</button>
+                <button type="button" id="restart-btn" class="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 px-6 rounded shadow-md text-sm focus:outline-none">再診断を行う</button>
+              </div>
+              
+            </div>
+          </section>
+        `;
+      }
+
+      renderCharts() {
+        if (typeof Chart === 'undefined') return;
+
+        const ex1 = Chart.getChart("radarChart"); if(ex1) ex1.destroy();
+        const ex2 = Chart.getChart("barChart");   if(ex2) ex2.destroy();
+
+        const { pctScores, gradeMatches } = this.state;
+        const radarColor = { bg: "rgba(245, 158, 11, 0.15)", border: "rgba(245, 158, 11, 1)", point: "rgba(245, 158, 11, 1)" };
+
+        const ctxRadar = document.getElementById('radarChart');
+        if (ctxRadar) {
+          new Chart(ctxRadar.getContext('2d'), {
+            type: 'radar',
+            data: {
+              labels: [['Basic Stance','(基礎姿勢)'], ['Execution','(業務遂行)'], ['Specialty','(専門・顧客)'], ['Innovation','(企画・変革)'], ['Management','(計画・組織)'], ['Leadership','(統率・決断)']],
+              datasets: [{
+                data: [pctScores.B, pctScores.E, pctScores.S, pctScores.I, pctScores.M, pctScores.L],
+                backgroundColor: radarColor.bg, borderColor: radarColor.border, borderWidth: 2,
+                pointBackgroundColor: radarColor.point, pointBorderColor: '#fff', pointRadius: 4, fill: true
+              }]
+            },
+            options: {
+              animation: false, responsive: true, maintainAspectRatio: false, 
+              layout: { padding: { top: 10, bottom: 20, left: 15, right: 15 } },
+              scales: { 
+                r: { 
+                  min: 0, max: 100, ticks: { display: false, stepSize: 20 }, 
+                  grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                  angleLines: { color: 'rgba(0, 0, 0, 0.1)' },
+                  pointLabels: { font: { size: 10, weight: 'bold' }, color: '#334155' } 
+                } 
+              },
+              plugins: { legend: { display: false } }
+            }
+          });
+        }
+
+        const ctxBar = document.getElementById('barChart');
+        if (ctxBar) {
+          const labels = gradeMatches.map(m => m.id);
+          const data = gradeMatches.map(m => m.matchPct);
+          const bgColors = gradeMatches.map(m => m.type === 'G' ? 'rgba(245, 158, 11, 0.85)' : 'rgba(139, 92, 246, 0.85)');
+
+          new Chart(ctxBar.getContext('2d'), {
+            type: 'bar',
+            data: {
+              labels: labels,
+              datasets: [{ 
+                data: data, 
+                backgroundColor: bgColors, 
+                borderRadius: 3,
+                barPercentage: 0.7,
+                categoryPercentage: 0.85
+              }]
+            },
+            options: {
+              animation: false, responsive: true, maintainAspectRatio: false,
+              layout: { padding: { top: 10, bottom: 15, left: 10, right: 10 } },
+              scales: {
+                y: { 
+                  min: 0, max: 100, ticks: { stepSize: 50, font: {size: 10} },
+                  grid: { color: 'rgba(0, 0, 0, 0.05)' } 
+                },
+                x: { 
+                  ticks: { font: { size: 10, weight: 'bold' }, color: '#334155' },
+                  grid: { display: false }
+                }
+              },
+              plugins: { 
+                legend: { display: false },
+                tooltip: { callbacks: { label: (c) => `到達率: ${c.raw}%` } }
+              }
+            }
+          });
+        }
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const app = new CompetencyAnalyzer('app');
+      app.init();
+    });
+  </script>
+</body>
+</html>
