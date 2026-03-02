@@ -23,9 +23,26 @@
             grid-template-columns: repeat(3, minmax(0, 1fr));
             width: 100%;
         }
+
+        /* アラートを画面上部に固定する設定 */
+        .sticky-alert {
+            position: sticky;
+            top: 0;
+            z-index: 50; /* 他の要素より上に表示 */
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 antialiased leading-relaxed">
+
+    <div class="sticky-alert bg-rose-600 text-white py-3 px-4 shadow-md">
+        <div class="max-w-6xl mx-auto flex items-center justify-center space-x-3">
+            <span class="text-xl">⚠️</span>
+            <p class="text-sm md:text-base font-black tracking-wider animate-pulse">
+                【重要】本ページに記載された「ご利用手順」および「免責事項」を全て精読・理解した上でアセスメントを実施してください。
+            </p>
+            <span class="text-xl hidden md:inline">⚠️</span>
+        </div>
+    </div>
 
     <header class="bg-slate-900 text-white py-12 px-6 text-center shadow-md">
         <div class="max-w-6xl mx-auto">
@@ -56,7 +73,7 @@
                         <li><strong class="text-slate-800">分析ベース：</strong> 基礎性格（Big Five）× ワークスタイル（RIASEC）</li>
                         <li><strong class="text-slate-800">わかること：</strong> 8種類のアーキタイプから、組織内で最も輝くポジションや得意な立ち回りを導き出します。</li>
                     </ul>
-                    <a href="index3.html" class="w-full text-center bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 rounded transition-colors text-sm shadow-sm">
+                    <a href="business_archetype_analyzer.html" class="w-full text-center bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 rounded transition-colors text-sm shadow-sm">
                         アーキタイプ診断を開く
                     </a>
                 </div>
@@ -73,7 +90,7 @@
                         <li><strong class="text-slate-800">分析ベース：</strong> 3領域・12の行動特性パラメーター</li>
                         <li><strong class="text-slate-800">わかること：</strong> 6つの事業領域における適性スコアや、強みが過剰に発揮された際のリスクと成長の方向性をレポートします。</li>
                     </ul>
-                    <a href="index2.html" class="w-full text-center bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded transition-colors text-sm shadow-sm">
+                    <a href="professional_aptitude_analyzer.html" class="w-full text-center bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded transition-colors text-sm shadow-sm">
                         適性アナライザーを開く
                     </a>
                 </div>
@@ -90,14 +107,14 @@
                         <li><strong class="text-slate-800">分析ベース：</strong> 90問の行動実績ファクト × 厳格な足切りロジック</li>
                         <li><strong class="text-slate-800">わかること：</strong> 現在の行動様式（アーキタイプ）と、次期目標へ向けた数値化された戦略マップを提示する「自己経営OS」です。</li>
                     </ul>
-                    <a href="index4.html" class="w-full text-center bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded transition-colors text-sm shadow-sm">
+                    <a href="competency_grade_analyzer.html" class="w-full text-center bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded transition-colors text-sm shadow-sm">
                         コンピテンシー判定を開く
                     </a>
                 </div>
             </div>
 
             <div class="lg:hidden grid grid-cols-1 md:grid-cols-2 gap-8 w-full">
-                </div>
+            </div>
         </section>
 
         <section>
@@ -140,7 +157,7 @@
                     <div class="mt-auto">
                         <span class="inline-block bg-teal-50 text-teal-800 text-[10px] font-bold px-2 py-0.5 rounded mb-2">セキュリティ・メリット</span>
                         <ul class="text-[11px] text-slate-700 space-y-1 list-disc list-inside">
-                            <li>個人情報および思考データの漏洩リスクが<strong class="text-slate-900">物理的にゼロ</strong>。</li>
+                            <li>個人情報および思考データの漏洩リスクが<strong class="text-slate-900">物理的にゼロ</strong>です。</li>
                             <li>企業の機密ネットワークや、高いセキュリティレベルが求められる環境でも即座に導入可能。</li>
                             <li>「ログが残る」というプレッシャーから解放され、自分自身と誠実に向き合えます。</li>
                         </ul>
@@ -158,7 +175,7 @@
                     <div class="mt-auto">
                         <span class="inline-block bg-blue-50 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded mb-2">再現性と信頼性</span>
                         <ul class="text-[11px] text-slate-700 space-y-1 list-disc list-inside">
-                            <li>AI特有の「ハルシネーション（もっともらしい嘘）」が混入する余地がありません。</li>
+                            <li>AI特有の「ハルシネーション」が混入する余地がありません。</li>
                             <li>同じ回答であれば、いつ誰が受けても常に一貫した<strong class="text-slate-900">不変の判定基準</strong>を担保。</li>
                             <li>入力した貴重な思考・実績データがAIの学習に利用されることは絶対にありません。</li>
                         </ul>
@@ -178,7 +195,7 @@
                 <div class="space-y-4">
                     <div class="flex items-start">
                         <span class="mr-3 font-bold">1.</span>
-                        <p><strong>ツールとしての定義：</strong> 本アセスメントは、職務行動定義と行動特性をヒューリスティックに関連付けた独自の「能力成熟度モデル」に基づくものであり、利用者が自己のポテンシャルや行動傾向を客観視し、内発的動機に基づく成長課題を言語化するための純粋なリフレクション（内省）支援ツールです。医学的な診断、特定の精神疾患の判定、または科学的・統計的に完全に証明された心理学的正確性を保証するものではありません。</p>
+                        <p><strong>ツールとしての定義：</strong> 本アセスメントは、職務行動定義と行動特性をヒューリスティックに関連付けた独自の「能力成熟度モデル」に基づくものであり、利用者が自己のポテンシャルや行動傾向を客観視し、内発的動機に基づく成長課題を言語化するための純粋なリフレクション（内省）支援ツールです。医学的な診断、特定の精神疾患の判定、または科学利益・統計的に完全に証明された心理学的正確性を保証するものではありません。</p>
                     </div>
                     
                     <div class="flex items-start">
